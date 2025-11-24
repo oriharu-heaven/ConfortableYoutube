@@ -12,11 +12,11 @@
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
-      "128": "icon.jpeg"
+      "128": "icon.png"
     }
   },
   "icons": {
-    "128": "icon.jpeg"
+    "128": "icon.png"
   },
   "content_scripts": [
     {
