@@ -1,3 +1,6 @@
+// content.js
+// 画面操作、CSS注入、設定反映を担当
+
 // --- 設定値 ---
 const CONFIG = {
   hideShorts: true, // Shortsを隠すか
@@ -7,118 +10,91 @@ const CONFIG = {
   autoSkipAds: true, // 広告をスキップするか
 };
 
-// --- 変数: 現在の動画カテゴリ ---
 let currentCategory = null;
 
 // ===========================================================
-// 1. 内部データ取得用スクリプトの注入 (Main World Injection)
+// 1. Shortsのリダイレクト (最優先・最速で実行)
 // ===========================================================
-// YouTubeのページ内部にある変数を取得して、この拡張機能に送信させる
-const injectScript = document.createElement("script");
-injectScript.textContent = `
-  (function() {
-    // カテゴリ情報を拡張機能へ送信する関数
-    function sendCategory() {
-      try {
-        const playerResp = document.getElementById('movie_player')?.getPlayerResponse?.() 
-                           || window.ytInitialPlayerResponse;
-        
-        const category = playerResp?.microformat?.playerMicroformatRenderer?.category;
-        
-        window.postMessage({ type: 'YT_CATEGORY_FETCHED', category: category }, '*');
-      } catch (e) {
-        // まだロードされていない可能性があるので無視
-      }
-    }
-
-    // ページ遷移(SPA)やロード完了を検知して実行
-    window.addEventListener('yt-navigate-finish', sendCategory);
-    window.addEventListener('load', sendCategory);
-    
-    // 念のため定期実行（プレイヤーの準備が遅れることがあるため）
-    setInterval(sendCategory, 2000);
-  })();
-`;
-document.documentElement.appendChild(injectScript);
-injectScript.remove();
-
-// 内部スクリプトからのメッセージを受け取る
-window.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "YT_CATEGORY_FETCHED") {
-    // カテゴリが変わった場合のみ更新処理
-    if (currentCategory !== event.data.category) {
-      currentCategory = event.data.category;
-      console.log(
-        `[Confortable YouTube] Category Detected: ${currentCategory}`
-      );
-      adjustPlaybackSpeed();
-    }
-  }
-});
-
-// ===========================================================
-// 2. Shortsの無効化とスタイル制御
-// ===========================================================
-
-// Shortsのリダイレクト処理 (ページ読み込みの最初の方で実行)
 function checkAndRedirectShorts() {
-  if (
-    CONFIG.redirectShorts &&
-    window.location.pathname.startsWith("/shorts/")
-  ) {
-    const videoId = window.location.pathname.split("/shorts/")[1];
+  // URLに /shorts/ が含まれていたら即座に転送
+  if (CONFIG.redirectShorts && location.pathname.startsWith("/shorts/")) {
+    const videoId = location.pathname.split("/shorts/")[1];
     if (videoId) {
-      // 通常のプレイヤーへ転送
-      window.location.replace(`https://www.youtube.com/watch?v=${videoId}`);
+      // 履歴に残さないように replace を使用
+      location.replace(`https://www.youtube.com/watch?v=${videoId}`);
     }
   }
 }
-checkAndRedirectShorts(); // 初回実行
+// 読み込み直後に一度実行
+checkAndRedirectShorts();
 
-// CSSによるShorts要素の隠蔽
-if (CONFIG.hideShorts) {
+// ===========================================================
+// 2. CSSによるShorts隠蔽 & スタイル適用
+// ===========================================================
+function injectStyles() {
+  // すでにスタイルがあるなら何もしない
+  if (document.getElementById("confortable-yt-style")) return;
+
+  // document.head がまだ無い場合は documentElement (htmlタグ) に追記を試みる
+  const targetRoot = document.head || document.documentElement;
+  if (!targetRoot) return; // それでも無ければ諦めて次のループで実行
+
   const style = document.createElement("style");
+  style.id = "confortable-yt-style";
   style.textContent = `
-    /* 左メニューのShortsボタン (href属性で判定するので確実) */
+    /* 左サイドバーのShortsボタン */
     ytd-guide-entry-renderer:has(a[href^="/shorts"]),
     ytd-mini-guide-entry-renderer:has(a[href^="/shorts"]) {
       display: none !important;
     }
 
-    /* トップページや検索結果のShorts棚 */
+    /* トップページ・検索結果のShorts棚 */
     ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts]),
     ytd-reel-shelf-renderer {
       display: none !important;
     }
+
+    /* 「ショート」という文字が含まれるヘッダーやタブ（念のため） */
+    yt-tab-shape[tab-title="ショート"],
+    yt-tab-shape[tab-title="Shorts"] {
+      display: none !important;
+    }
     
-    /* スマホ版レイアウトなどが混ざった場合のShortsリンク */
+    /* モバイル表示っぽいレイアウトの場合 */
     a[href^="/shorts"] {
       display: none !important;
     }
   `;
-  document.head.appendChild(style);
+  targetRoot.appendChild(style);
+  console.log("[Confortable YouTube] Styles injected.");
 }
 
 // ===========================================================
-// 3. 広告スキップ & 再生速度変更
+// 3. メイン機能 (速度変更・広告スキップ)
 // ===========================================================
+
+// content_main.js からのカテゴリ情報を受け取る
+window.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "YT_CATEGORY_FETCHED") {
+    if (currentCategory !== event.data.category) {
+      currentCategory = event.data.category;
+      console.log(`[Confortable YouTube] Category: ${currentCategory}`);
+      adjustPlaybackSpeed();
+    }
+  }
+});
 
 function adjustPlaybackSpeed() {
   const video = document.querySelector("video");
   if (!video) return;
 
-  // カテゴリ判定 (取得できていない場合は一旦デフォルトにする)
-  // "Music" (英語設定) または "音楽" (日本語設定) の場合に等倍
   const isMusic = currentCategory === "Music" || currentCategory === "音楽";
-
   const targetSpeed = isMusic ? CONFIG.musicSpeed : CONFIG.defaultSpeed;
 
-  // 速度適用 (再生中かつ速度が違う場合のみ)
+  // 誤差0.1以上あれば変更（微小なズレ防止）
   if (Math.abs(video.playbackRate - targetSpeed) > 0.1) {
     video.playbackRate = targetSpeed;
-    console.log(
-      `[Confortable YouTube] Speed set to ${targetSpeed}x (Category: ${currentCategory})`
-    );
+    // console.log(`Speed updated to ${targetSpeed}`);
   }
 }
 
@@ -137,24 +113,21 @@ function skipAds() {
 }
 
 // ===========================================================
-// 4. 監視ループ (Observer)
+// 4. 監視ループ
 // ===========================================================
+const observer = new MutationObserver(() => {
+  // DOMが変わるたびにチェック
+  checkAndRedirectShorts();
+  skipAds();
+  injectStyles(); // headタグ生成待ちのためここでも呼ぶ
+});
 
-// URL変更監視 (SPA対応)
-let lastUrl = location.href;
-new MutationObserver(() => {
-  const url = location.href;
-  if (url !== lastUrl) {
-    lastUrl = url;
-    checkAndRedirectShorts(); // URLが変わったら即Shortsチェック
-    currentCategory = null; // カテゴリリセット
-  }
-  skipAds(); // 広告は常に監視
-}).observe(document, { subtree: true, childList: true });
+// 監視開始 (bodyがあればbody、なければdocumentElement)
+const targetNode = document.body || document.documentElement;
+observer.observe(targetNode, { childList: true, subtree: true });
 
-// 定期チェック (念のため)
+// 定期実行 (念押し)
 setInterval(() => {
   adjustPlaybackSpeed();
+  injectStyles(); // 万が一Observerが外れた時用
 }, 1000);
-
-console.log("[Confortable YouTube] Loaded.");

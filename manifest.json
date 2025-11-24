@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Confortable YouTube",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Shorts非表示、広告スキップ、スマート再生速度変更機能を実現。",
   "permissions": [
     "storage"
@@ -13,6 +13,12 @@
     "default_popup": "popup.html"
   },
   "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content_main.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
     {
       "matches": ["https://www.youtube.com/*"],
       "js": ["content.js"],
