@@ -3,11 +3,11 @@
 
 // --- 設定値 ---
 const CONFIG = {
-  hideShorts: true, // Shortsを隠すか
-  redirectShorts: true, // Shortsを開いたら通常プレイヤーに転送するか
-  defaultSpeed: 2.0, // 基本の再生速度
-  musicSpeed: 1.0, // 音楽の時の再生速度
-  autoSkipAds: true, // 広告をスキップするか
+  hideShorts: true,        // Shortsを隠すか
+  redirectShorts: true,    // Shortsを開いたら通常プレイヤーに転送するか
+  defaultSpeed: 2.0,       // 基本の再生速度
+  musicSpeed: 1.0,         // 音楽の時の再生速度
+  autoSkipAds: true        // 広告をスキップするか
 };
 
 let currentCategory = null;
@@ -25,8 +25,9 @@ function checkAndRedirectShorts() {
 }
 checkAndRedirectShorts();
 
+
 // ===========================================================
-// 2. CSSによるShorts隠蔽 & スタイル適用 (強化版)
+// 2. CSSによる広告・Shortsの徹底排除
 // ===========================================================
 function injectStyles() {
   if (document.getElementById("confortable-yt-style")) return;
@@ -36,41 +37,58 @@ function injectStyles() {
 
   const style = document.createElement("style");
   style.id = "confortable-yt-style";
-  style.textContent = `
-    /* --- 左サイドバーメニュー (日本語・英語対応) --- */
-    /* 通常メニュー (開いている時) */
-    ytd-guide-entry-renderer:has(a[href^="/shorts"]),
-    ytd-guide-entry-renderer:has(a[title="Shorts"]),
-    ytd-guide-entry-renderer:has(a[title="ショート"]),
-    /* ミニメニュー (閉じている時) */
-    ytd-mini-guide-entry-renderer:has(a[href^="/shorts"]),
-    ytd-mini-guide-entry-renderer:has(a[title="Shorts"]),
-    ytd-mini-guide-entry-renderer:has(a[title="ショート"]),
-    /* スマホ/タブレット表示時 */
-    ytd-mini-guide-entry-renderer[aria-label="Shorts"],
-    ytd-mini-guide-entry-renderer[aria-label="ショート"] {
-      display: none !important;
-    }
-
-    /* --- トップページ・検索結果のShorts棚 --- */
-    ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts]),
-    ytd-reel-shelf-renderer {
-      display: none !important;
-    }
+  
+  // 広告ブロック用の強力なCSSセレクタ群
+  const adSelectors = [
+    // --- 動画プレーヤー内の広告 ---
+    ".ytp-ad-overlay-container",      // 下部バナー広告
+    ".ytp-ad-image-overlay",          // 画像オーバーレイ
+    "#player-ads",                    // プレーヤー横の広告エリア
     
-    /* --- その他「ショート」へのリンク --- */
-    /* チップ（ヘッダー下のフィルタボタン） */
-    yt-chip-cloud-chip-renderer:has(span[title="Shorts"]),
-    yt-chip-cloud-chip-renderer:has(span[title="ショート"]) {
+    // --- ホーム画面・フィード内の広告 (動画紹介に混ざるもの) ---
+    "ytd-ad-slot-renderer",           // 汎用広告スロット
+    "ytd-rich-item-renderer:has(ytd-ad-slot-renderer)", // 広告を含む動画タイル
+    "#masthead-ad",                   // 最上部の巨大バナー
+    "ytd-banner-promo-renderer",      // プロモーションバナー
+    
+    // --- 検索結果・サイドバーの広告 ---
+    "ytd-promoted-sparkles-web-renderer", // 検索結果のスポンサーサイト
+    "ytd-promoted-sparkles-text-search-renderer",
+    "#offer-module",                  // 商品販売など
+    
+    // --- Shorts関連 (既存) ---
+    "ytd-guide-entry-renderer:has(a[href^='/shorts'])",
+    "ytd-guide-entry-renderer:has(a[title='Shorts'])",
+    "ytd-guide-entry-renderer:has(a[title='ショート'])",
+    "ytd-mini-guide-entry-renderer:has(a[href^='/shorts'])",
+    "ytd-mini-guide-entry-renderer:has(a[title='Shorts'])",
+    "ytd-mini-guide-entry-renderer:has(a[title='ショート'])",
+    "ytd-mini-guide-entry-renderer[aria-label='Shorts']",
+    "ytd-mini-guide-entry-renderer[aria-label='ショート']",
+    "ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts])",
+    "ytd-reel-shelf-renderer",
+    "yt-chip-cloud-chip-renderer:has(span[title='Shorts'])",
+    "yt-chip-cloud-chip-renderer:has(span[title='ショート'])",
+    "a[href^='/shorts']"
+  ];
+
+  style.textContent = `
+    ${adSelectors.join(",\n")} {
       display: none !important;
+      visibility: hidden !important;
+      height: 0 !important;
+      width: 0 !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
     }
   `;
+  
   targetRoot.appendChild(style);
-  console.log("[Confortable YouTube] Styles injected (Enhanced).");
 }
 
+
 // ===========================================================
-// 3. メイン機能 (速度変更・広告スキップ)
+// 3. メイン機能 (速度変更・動画広告スキップ)
 // ===========================================================
 
 // content_main.js からのカテゴリ情報を受け取る
@@ -78,7 +96,6 @@ window.addEventListener("message", (event) => {
   if (event.data && event.data.type === "YT_CATEGORY_FETCHED") {
     if (currentCategory !== event.data.category) {
       currentCategory = event.data.category;
-      console.log(`[Confortable YouTube] Category: ${currentCategory}`);
       adjustPlaybackSpeed();
     }
   }
@@ -87,6 +104,11 @@ window.addEventListener("message", (event) => {
 function adjustPlaybackSpeed() {
   const video = document.querySelector("video");
   if (!video) return;
+
+  // 広告再生中は速度変更ロジックを邪魔しない
+  if (document.querySelector(".ad-showing") || document.querySelector(".ad-interrupting")) {
+    return;
+  }
 
   const isMusic = currentCategory === "Music" || currentCategory === "音楽";
   const targetSpeed = isMusic ? CONFIG.musicSpeed : CONFIG.defaultSpeed;
@@ -99,16 +121,37 @@ function adjustPlaybackSpeed() {
 function skipAds() {
   if (!CONFIG.autoSkipAds) return;
 
-  const skipButton = document.querySelector(
-    ".ytp-ad-skip-button, .ytp-ad-skip-button-modern"
-  );
-  if (skipButton) skipButton.click();
-
-  const overlayCloseBtn = document.querySelector(
-    ".ytp-ad-overlay-close-button"
-  );
+  const video = document.querySelector("video");
+  
+  // 1. バナー広告などを物理的に閉じる (CSSで消えていても念のため)
+  const overlayCloseBtn = document.querySelector(".ytp-ad-overlay-close-button");
   if (overlayCloseBtn) overlayCloseBtn.click();
+
+  // 2. スキップボタンがあれば即クリック
+  const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button');
+  if (skipBtn) {
+    skipBtn.click();
+    return; 
+  }
+
+  // 3. 動画広告が流れている場合 (ad-showingクラスなどで判定)
+  const adShowing = document.querySelector(".ad-showing") || document.querySelector(".ad-interrupting");
+  if (adShowing && video) {
+    // 強制的に超高速再生して終わらせる
+    video.playbackRate = 16.0;
+    video.muted = true; // 音も消す
+    
+    // シークが可能なら終了直前まで飛ばす
+    if (!isNaN(video.duration) && video.currentTime < video.duration - 0.1) {
+       video.currentTime = video.duration;
+    }
+  }
+  
+  // 4. アンケート広告など特殊なオーバーレイの除去
+  const surveySkip = document.querySelector(".ytp-ad-survey-skip-button"); // アンケートスキップ
+  if (surveySkip) surveySkip.click();
 }
+
 
 // ===========================================================
 // 4. 監視ループ
@@ -122,7 +165,9 @@ const observer = new MutationObserver(() => {
 const targetNode = document.body || document.documentElement;
 observer.observe(targetNode, { childList: true, subtree: true });
 
+// 定期実行
 setInterval(() => {
   adjustPlaybackSpeed();
+  skipAds();
   injectStyles();
-}, 1000);
+}, 500);
