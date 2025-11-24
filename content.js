@@ -16,57 +16,57 @@ let currentCategory = null;
 // 1. Shortsのリダイレクト (最優先・最速で実行)
 // ===========================================================
 function checkAndRedirectShorts() {
-  // URLに /shorts/ が含まれていたら即座に転送
   if (CONFIG.redirectShorts && location.pathname.startsWith("/shorts/")) {
     const videoId = location.pathname.split("/shorts/")[1];
     if (videoId) {
-      // 履歴に残さないように replace を使用
       location.replace(`https://www.youtube.com/watch?v=${videoId}`);
     }
   }
 }
-// 読み込み直後に一度実行
 checkAndRedirectShorts();
 
 // ===========================================================
-// 2. CSSによるShorts隠蔽 & スタイル適用
+// 2. CSSによるShorts隠蔽 & スタイル適用 (強化版)
 // ===========================================================
 function injectStyles() {
-  // すでにスタイルがあるなら何もしない
   if (document.getElementById("confortable-yt-style")) return;
 
-  // document.head がまだ無い場合は documentElement (htmlタグ) に追記を試みる
   const targetRoot = document.head || document.documentElement;
-  if (!targetRoot) return; // それでも無ければ諦めて次のループで実行
+  if (!targetRoot) return;
 
   const style = document.createElement("style");
   style.id = "confortable-yt-style";
   style.textContent = `
-    /* 左サイドバーのShortsボタン */
+    /* --- 左サイドバーメニュー (日本語・英語対応) --- */
+    /* 通常メニュー (開いている時) */
     ytd-guide-entry-renderer:has(a[href^="/shorts"]),
-    ytd-mini-guide-entry-renderer:has(a[href^="/shorts"]) {
+    ytd-guide-entry-renderer:has(a[title="Shorts"]),
+    ytd-guide-entry-renderer:has(a[title="ショート"]),
+    /* ミニメニュー (閉じている時) */
+    ytd-mini-guide-entry-renderer:has(a[href^="/shorts"]),
+    ytd-mini-guide-entry-renderer:has(a[title="Shorts"]),
+    ytd-mini-guide-entry-renderer:has(a[title="ショート"]),
+    /* スマホ/タブレット表示時 */
+    ytd-mini-guide-entry-renderer[aria-label="Shorts"],
+    ytd-mini-guide-entry-renderer[aria-label="ショート"] {
       display: none !important;
     }
 
-    /* トップページ・検索結果のShorts棚 */
+    /* --- トップページ・検索結果のShorts棚 --- */
     ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts]),
     ytd-reel-shelf-renderer {
       display: none !important;
     }
-
-    /* 「ショート」という文字が含まれるヘッダーやタブ（念のため） */
-    yt-tab-shape[tab-title="ショート"],
-    yt-tab-shape[tab-title="Shorts"] {
-      display: none !important;
-    }
     
-    /* モバイル表示っぽいレイアウトの場合 */
-    a[href^="/shorts"] {
+    /* --- その他「ショート」へのリンク --- */
+    /* チップ（ヘッダー下のフィルタボタン） */
+    yt-chip-cloud-chip-renderer:has(span[title="Shorts"]),
+    yt-chip-cloud-chip-renderer:has(span[title="ショート"]) {
       display: none !important;
     }
   `;
   targetRoot.appendChild(style);
-  console.log("[Confortable YouTube] Styles injected.");
+  console.log("[Confortable YouTube] Styles injected (Enhanced).");
 }
 
 // ===========================================================
@@ -91,10 +91,8 @@ function adjustPlaybackSpeed() {
   const isMusic = currentCategory === "Music" || currentCategory === "音楽";
   const targetSpeed = isMusic ? CONFIG.musicSpeed : CONFIG.defaultSpeed;
 
-  // 誤差0.1以上あれば変更（微小なズレ防止）
   if (Math.abs(video.playbackRate - targetSpeed) > 0.1) {
     video.playbackRate = targetSpeed;
-    // console.log(`Speed updated to ${targetSpeed}`);
   }
 }
 
@@ -116,18 +114,15 @@ function skipAds() {
 // 4. 監視ループ
 // ===========================================================
 const observer = new MutationObserver(() => {
-  // DOMが変わるたびにチェック
   checkAndRedirectShorts();
   skipAds();
-  injectStyles(); // headタグ生成待ちのためここでも呼ぶ
+  injectStyles();
 });
 
-// 監視開始 (bodyがあればbody、なければdocumentElement)
 const targetNode = document.body || document.documentElement;
 observer.observe(targetNode, { childList: true, subtree: true });
 
-// 定期実行 (念押し)
 setInterval(() => {
   adjustPlaybackSpeed();
-  injectStyles(); // 万が一Observerが外れた時用
+  injectStyles();
 }, 1000);

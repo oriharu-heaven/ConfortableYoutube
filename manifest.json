@@ -10,7 +10,13 @@
     "https://www.youtube.com/*"
   ],
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "128": "icon.jpeg"
+    }
+  },
+  "icons": {
+    "128": "icon.jpeg"
   },
   "content_scripts": [
     {
